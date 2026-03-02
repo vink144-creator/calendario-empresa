@@ -1,3 +1,6 @@
+<div style={{padding: 10, background: "yellow", fontWeight: 900}}>
+  VERSION NUEVA - PRUEBA
+</div>
 import React, { useMemo, useState } from "react";
 import EventForm from "./components/EventForm";
 
