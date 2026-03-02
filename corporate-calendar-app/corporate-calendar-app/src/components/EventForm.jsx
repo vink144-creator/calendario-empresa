@@ -4,66 +4,56 @@ const EVENT_TYPES = [
   "Reunión de prospección (primera reunión)",
   "Reunión de descubrimiento de necesidades",
   "Workshop",
-  "Presentación de propuesta Tecnica",
+  "Presentación de propuesta Técnica",
   "Reunión de negociación / cierre",
-  "Presentación de propuesta Economica",
+  "Presentación de propuesta Económica",
   "Desayuno",
   "Almuerzo",
   "Cena",
-  "Evento Anual con Pathers",
+  "Evento Anual con Partners",
   "Evento Networking",
   "Lanzamiento de nuevo Producto",
 ];
 
-const MANAGERS = [
-  { code: "FC", name: "Fernando Chilet" },
-  { code: "AD", name: "Alejandro Daccarett" },
-  { code: "CP", name: "Carolina Pinilla" },
-  { code: "EG", name: "Edwin Gallardo" },
-  { code: "PR", name: "Pablo Rondan" },
-  { code: "MA", name: "Miguiar Apestegui" },
-  { code: "VS", name: "Vinklaguer Sanchez" },
-];
-
-function formatCLPInput(value) {
-  // Solo dígitos
-  const digits = String(value ?? "").replace(/[^\d]/g, "");
-  if (!digits) return "";
-  // Sin separadores raros: 1000000 -> 1.000.000
-  return Number(digits).toLocaleString("es-CL");
+function formatCLP(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const num = Number(String(value).replace(/[^\d]/g, ""));
+  if (Number.isNaN(num)) return "";
+  return num.toLocaleString("es-CL");
 }
 
-function parseCLPToNumber(value) {
-  const digits = String(value ?? "").replace(/[^\d]/g, "");
-  return digits ? Number(digits) : 0;
-}
-
-export default function EventForm({ onSave }) {
+export default function EventForm({ onCreate }) {
   const [nombreEvento, setNombreEvento] = useState("");
-  const [gerente, setGerente] = useState("VS");
-  const [fechaHora, setFechaHora] = useState("");
+  const [gerenteOrganiza, setGerenteOrganiza] = useState("");
+  const [fechaHora, setFechaHora] = useState(""); // datetime-local
   const [duracionHoras, setDuracionHoras] = useState(1);
   const [tipoEvento, setTipoEvento] = useState(EVENT_TYPES[0]);
-
   const [presupuestoCLP, setPresupuestoCLP] = useState("");
   const [direccion, setDireccion] = useState("");
 
-  // Empresas invitadas (chips)
+  // Invitados por razón social (chips + números)
   const [empresaInput, setEmpresaInput] = useState("");
-  const [empresas, setEmpresas] = useState([]); // { id, razonSocial, invitados, confirmados }
+  const [empresas, setEmpresas] = useState([
+    // ejemplo
+    // { id: "1", nombre: "Entel", invitados: 5, confirmados: 2 }
+  ]);
 
-  const gerenteLabel = useMemo(() => {
-    const m = MANAGERS.find((x) => x.code === gerente);
-    return m ? `${m.code} - ${m.name}` : gerente;
-  }, [gerente]);
+  const totalInvitados = useMemo(
+    () => empresas.reduce((acc, e) => acc + (Number(e.invitados) || 0), 0),
+    [empresas]
+  );
+  const totalConfirmados = useMemo(
+    () => empresas.reduce((acc, e) => acc + (Number(e.confirmados) || 0), 0),
+    [empresas]
+  );
 
   function addEmpresa() {
-    const name = empresaInput.trim();
-    if (!name) return;
+    const nombre = empresaInput.trim();
+    if (!nombre) return;
 
-    // Evitar duplicados por nombre (case-insensitive)
+    // Evitar duplicados por nombre
     const exists = empresas.some(
-      (e) => e.razonSocial.toLowerCase() === name.toLowerCase()
+      (e) => e.nombre.toLowerCase() === nombre.toLowerCase()
     );
     if (exists) {
       setEmpresaInput("");
@@ -72,12 +62,7 @@ export default function EventForm({ onSave }) {
 
     setEmpresas((prev) => [
       ...prev,
-      {
-        id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
-        razonSocial: name,
-        invitados: 0,
-        confirmados: 0,
-      },
+      { id: crypto.randomUUID?.() || String(Date.now()), nombre, invitados: 0, confirmados: 0 },
     ]);
     setEmpresaInput("");
   }
@@ -88,59 +73,48 @@ export default function EventForm({ onSave }) {
 
   function updateEmpresa(id, patch) {
     setEmpresas((prev) =>
-      prev.map((e) => {
-        if (e.id !== id) return e;
-        const next = { ...e, ...patch };
-
-        // Reglas mínimas: confirmados no puede ser > invitados
-        const inv = Number(next.invitados || 0);
-        let conf = Number(next.confirmados || 0);
-        if (conf > inv) conf = inv;
-
-        return { ...next, invitados: inv, confirmados: conf };
-      })
+      prev.map((e) => (e.id === id ? { ...e, ...patch } : e))
     );
+  }
+
+  function handleEmpresaKeyDown(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addEmpresa();
+    }
   }
 
   function handleSubmit(e) {
     e.preventDefault();
 
-    if (!nombreEvento.trim()) {
-      alert("Falta: Nombre del Evento");
-      return;
-    }
-    if (!fechaHora) {
-      alert("Falta: Fecha y hora");
-      return;
-    }
-    if (!duracionHoras || Number(duracionHoras) <= 0) {
-      alert("Duración debe ser mayor a 0 horas");
-      return;
-    }
-
-    const presupuesto = parseCLPToNumber(presupuestoCLP);
-
-    const event = {
-      id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    const payload = {
       nombreEvento: nombreEvento.trim(),
-      gerenteCode: gerente,
-      gerenteLabel,
-      fechaHoraISO: new Date(fechaHora).toISOString(),
-      duracionHoras: Number(duracionHoras),
+      gerenteOrganiza: gerenteOrganiza.trim(),
+      fechaHora,
+      duracionHoras: Number(duracionHoras) || 1,
       tipoEvento,
-      presupuestoCLP: presupuesto,
+      presupuestoCLP: Number(String(presupuestoCLP).replace(/[^\d]/g, "")) || 0,
       direccion: direccion.trim(),
-      invitadosPorRazonSocial: empresas,
-      createdAtISO: new Date().toISOString(),
+      invitadosPorEmpresa: empresas.map((e) => ({
+        razonSocial: e.nombre,
+        invitados: Number(e.invitados) || 0,
+        confirmados: Number(e.confirmados) || 0,
+      })),
+      createdAt: new Date().toISOString(),
     };
 
-    if (onSave) onSave(event);
+    if (!payload.nombreEvento || !payload.fechaHora) {
+      alert("Falta completar: Nombre del Evento y Fecha/Hora.");
+      return;
+    }
 
-    // Reset
+    onCreate?.(payload);
+
+    // Reset (mantengo tipo por comodidad)
     setNombreEvento("");
+    setGerenteOrganiza("");
     setFechaHora("");
     setDuracionHoras(1);
-    setTipoEvento(EVENT_TYPES[0]);
     setPresupuestoCLP("");
     setDireccion("");
     setEmpresaInput("");
@@ -148,78 +122,59 @@ export default function EventForm({ onSave }) {
   }
 
   return (
-    <div style={{ padding: 20, maxWidth: 1100 }}>
-      <h2 style={{ margin: 0, marginBottom: 14 }}>Crear evento</h2>
+    <div style={styles.card}>
+      <h2 style={styles.h2}>Crear Evento</h2>
 
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>
-        {/* Fila 1 */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+      <form onSubmit={handleSubmit} style={styles.form}>
+        <div style={styles.grid2}>
           <div>
-            <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
-              Nombre del Evento
-            </label>
+            <label style={styles.label}>Nombre del Evento</label>
             <input
+              style={styles.input}
               value={nombreEvento}
               onChange={(e) => setNombreEvento(e.target.value)}
-              placeholder="Ej: Workshop Entel Connect - SKY"
-              style={inputStyle}
+              placeholder="Ej: Workshop con cliente X"
             />
           </div>
 
           <div>
-            <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
-              Gerente que lo organiza
-            </label>
-            <select
-              value={gerente}
-              onChange={(e) => setGerente(e.target.value)}
-              style={inputStyle}
-            >
-              {MANAGERS.map((m) => (
-                <option key={m.code} value={m.code}>
-                  {m.code} - {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Fila 2 */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr 1fr", gap: 12 }}>
-          <div>
-            <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
-              Fecha y hora
-            </label>
+            <label style={styles.label}>Gerente que lo organiza</label>
             <input
+              style={styles.input}
+              value={gerenteOrganiza}
+              onChange={(e) => setGerenteOrganiza(e.target.value)}
+              placeholder="Ej: Fernando Chilet"
+            />
+          </div>
+
+          <div>
+            <label style={styles.label}>Fecha y hora</label>
+            <input
+              style={styles.input}
               type="datetime-local"
               value={fechaHora}
               onChange={(e) => setFechaHora(e.target.value)}
-              style={inputStyle}
             />
           </div>
 
           <div>
-            <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
-              Duración (horas)
-            </label>
+            <label style={styles.label}>Duración (horas)</label>
             <input
+              style={styles.input}
               type="number"
-              min={0.5}
-              step={0.5}
+              min={1}
+              step={1}
               value={duracionHoras}
               onChange={(e) => setDuracionHoras(e.target.value)}
-              style={inputStyle}
             />
           </div>
 
           <div>
-            <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
-              Tipo de evento
-            </label>
+            <label style={styles.label}>Tipo de evento</label>
             <select
+              style={styles.input}
               value={tipoEvento}
               onChange={(e) => setTipoEvento(e.target.value)}
-              style={inputStyle}
             >
               {EVENT_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -228,137 +183,110 @@ export default function EventForm({ onSave }) {
               ))}
             </select>
           </div>
-        </div>
 
-        {/* Fila 3 */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12 }}>
           <div>
-            <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
-              Presupuesto (CLP)
-            </label>
+            <label style={styles.label}>Presupuesto (CLP)</label>
             <input
-              value={presupuestoCLP}
-              onChange={(e) => setPresupuestoCLP(formatCLPInput(e.target.value))}
-              placeholder="Ej: 1.500.000"
-              style={inputStyle}
+              style={styles.input}
+              value={formatCLP(presupuestoCLP)}
+              onChange={(e) => setPresupuestoCLP(e.target.value)}
+              placeholder="Ej: 1.200.000"
               inputMode="numeric"
             />
-            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-              Se guarda como número (sin puntos).
-            </div>
           </div>
 
-          <div>
-            <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
-              Dirección del evento
-            </label>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={styles.label}>Dirección del evento</label>
             <input
+              style={styles.input}
               value={direccion}
               onChange={(e) => setDireccion(e.target.value)}
-              placeholder="Ej: Av. Apoquindo 3000, Las Condes"
-              style={inputStyle}
+              placeholder="Ej: Av. Apoquindo 1234, Las Condes"
             />
           </div>
         </div>
 
-        {/* Invitados */}
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 800, marginBottom: 10 }}>
-            Razón social de los invitados
-          </div>
+        <div style={{ marginTop: 16 }}>
+          <label style={styles.label}>
+            Razón social de los invitados (agrega varias)
+          </label>
 
-          {/* Input + botón */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
+          <div style={styles.row}>
             <input
+              style={{ ...styles.input, flex: 1 }}
               value={empresaInput}
               onChange={(e) => setEmpresaInput(e.target.value)}
-              placeholder="Escribe la razón social y presiona +"
-              style={inputStyle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addEmpresa();
-                }
-              }}
+              onKeyDown={handleEmpresaKeyDown}
+              placeholder="Escribe una empresa y presiona Enter"
             />
-            <button type="button" onClick={addEmpresa} style={btnPrimary}>
-              +
+            <button type="button" style={styles.btn} onClick={addEmpresa}>
+              + Agregar
             </button>
           </div>
 
-          {/* Chips */}
           {empresas.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+            <div style={styles.empList}>
               {empresas.map((e) => (
-                <div key={e.id} style={chipStyle}>
-                  <span style={{ fontWeight: 700 }}>
-                    {e.razonSocial}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeEmpresa(e.id)}
-                    style={chipXStyle}
-                    title="Eliminar"
-                  >
-                    ×
-                  </button>
+                <div key={e.id} style={styles.empItem}>
+                  <div style={styles.chip}>
+                    <span style={{ fontWeight: 700 }}>{e.nombre}</span>
+                    <button
+                      type="button"
+                      style={styles.chipX}
+                      onClick={() => removeEmpresa(e.id)}
+                      title="Quitar"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={styles.empNums}>
+                    <div style={styles.empField}>
+                      <span style={styles.smallLabel}>Invitados</span>
+                      <input
+                        style={styles.smallInput}
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={e.invitados}
+                        onChange={(ev) =>
+                          updateEmpresa(e.id, { invitados: ev.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div style={styles.empField}>
+                      <span style={styles.smallLabel}>Confirmados</span>
+                      <input
+                        style={styles.smallInput}
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={e.confirmados}
+                        onChange={(ev) =>
+                          updateEmpresa(e.id, { confirmados: ev.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
-            </div>
-          )}
 
-          {/* Tabla de conteos */}
-          {empresas.length > 0 && (
-            <div style={{ marginTop: 14, overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Razón social</th>
-                    <th style={thStyle}>Invitados</th>
-                    <th style={thStyle}>Confirmados</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {empresas.map((e) => (
-                    <tr key={e.id}>
-                      <td style={tdStyle}>{e.razonSocial}</td>
-                      <td style={tdStyle}>
-                        <input
-                          type="number"
-                          min={0}
-                          value={e.invitados}
-                          onChange={(ev) =>
-                            updateEmpresa(e.id, { invitados: ev.target.value })
-                          }
-                          style={miniInput}
-                        />
-                      </td>
-                      <td style={tdStyle}>
-                        <input
-                          type="number"
-                          min={0}
-                          value={e.confirmados}
-                          onChange={(ev) =>
-                            updateEmpresa(e.id, { confirmados: ev.target.value })
-                          }
-                          style={miniInput}
-                        />
-                        <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
-                          (No puede superar invitados)
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={styles.totals}>
+                <div>
+                  <b>Total invitados:</b> {totalInvitados}
+                </div>
+                <div>
+                  <b>Total confirmados:</b> {totalConfirmados}
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Botón guardar */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <button type="submit" style={btnSave}>
-            Guardar evento
+        <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end" }}>
+          <button type="submit" style={styles.primary}>
+            Guardar Evento
           </button>
         </div>
       </form>
@@ -366,82 +294,92 @@ export default function EventForm({ onSave }) {
   );
 }
 
-const inputStyle = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #d9dde6",
-  outline: "none",
-  fontSize: 14,
-  background: "white",
-};
-
-const cardStyle = {
-  border: "1px solid #e6e9f0",
-  borderRadius: 14,
-  padding: 14,
-  background: "#fff",
-};
-
-const btnPrimary = {
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: "1px solid #1d4ed8",
-  background: "#1d4ed8",
-  color: "white",
-  fontWeight: 900,
-  cursor: "pointer",
-  width: 44,
-};
-
-const btnSave = {
-  padding: "10px 16px",
-  borderRadius: 10,
-  border: "1px solid #0f172a",
-  background: "#0f172a",
-  color: "white",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const chipStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 10,
-  padding: "6px 10px",
-  borderRadius: 999,
-  border: "1px solid #d9dde6",
-  background: "#f8fafc",
-  fontSize: 13,
-};
-
-const chipXStyle = {
-  border: "none",
-  background: "transparent",
-  cursor: "pointer",
-  fontSize: 18,
-  lineHeight: "18px",
-  padding: 0,
-};
-
-const thStyle = {
-  textAlign: "left",
-  fontSize: 12,
-  opacity: 0.75,
-  padding: "8px 6px",
-  borderBottom: "1px solid #e6e9f0",
-};
-
-const tdStyle = {
-  padding: "10px 6px",
-  borderBottom: "1px solid #f0f2f7",
-  verticalAlign: "top",
-};
-
-const miniInput = {
-  width: 120,
-  padding: "8px 10px",
-  borderRadius: 10,
-  border: "1px solid #d9dde6",
-  outline: "none",
+const styles = {
+  card: {
+    border: "1px solid #e6e6e6",
+    borderRadius: 12,
+    padding: 16,
+    background: "#fff",
+  },
+  h2: { margin: 0, marginBottom: 12 },
+  form: { width: "100%" },
+  grid2: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+  },
+  label: { display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 },
+  input: {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #dcdcdc",
+    outline: "none",
+  },
+  row: { display: "flex", gap: 10, alignItems: "center" },
+  btn: {
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #dcdcdc",
+    background: "#f7f7f7",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+  primary: {
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #111",
+    background: "#111",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 800,
+  },
+  empList: {
+    marginTop: 10,
+    border: "1px solid #eee",
+    borderRadius: 12,
+    padding: 12,
+    background: "#fafafa",
+  },
+  empItem: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "center",
+    padding: "10px 0",
+    borderBottom: "1px solid #eee",
+  },
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "#fff",
+    border: "1px solid #e1e1e1",
+    minWidth: 260,
+  },
+  chipX: {
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    fontSize: 18,
+    lineHeight: 1,
+  },
+  empNums: { display: "flex", gap: 12, alignItems: "center" },
+  empField: { display: "flex", flexDirection: "column", gap: 4 },
+  smallLabel: { fontSize: 12, color: "#333", fontWeight: 700 },
+  smallInput: {
+    width: 120,
+    padding: "8px 10px",
+    borderRadius: 10,
+    border: "1px solid #dcdcdc",
+    outline: "none",
+  },
+  totals: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 18,
+    paddingTop: 12,
+  },
 };
