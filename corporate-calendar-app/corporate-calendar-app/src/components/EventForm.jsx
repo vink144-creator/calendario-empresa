@@ -4,382 +4,357 @@ const EVENT_TYPES = [
   "Reunión de prospección (primera reunión)",
   "Reunión de descubrimiento de necesidades",
   "Workshop",
-  "Presentación de propuesta Técnica",
+  "Presentación de propuesta Tecnica",
   "Reunión de negociación / cierre",
-  "Presentación de propuesta Económica",
+  "Presentación de propuesta Economica",
   "Desayuno",
   "Almuerzo",
   "Cena",
-  "Evento Anual con Partners",
+  "Evento Anual con Pathers",
   "Evento Networking",
   "Lanzamiento de nuevo Producto",
 ];
 
-function formatCLP(value) {
-  if (value === "" || value === null || value === undefined) return "";
-  const num = Number(String(value).replace(/[^\d]/g, ""));
-  if (Number.isNaN(num)) return "";
-  return num.toLocaleString("es-CL");
+function toLocalDateTimeInputValue(date) {
+  // yyyy-MM-ddTHH:mm
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function clampInt(v, min, max) {
+  const n = Number.parseInt(v, 10);
+  if (Number.isNaN(n)) return min;
+  return Math.max(min, Math.min(max, n));
 }
 
 export default function EventForm({ onCreate }) {
-  const [nombreEvento, setNombreEvento] = useState("");
-  const [gerenteOrganiza, setGerenteOrganiza] = useState("");
-  const [fechaHora, setFechaHora] = useState(""); // datetime-local
-  const [duracionHoras, setDuracionHoras] = useState(1);
-  const [tipoEvento, setTipoEvento] = useState(EVENT_TYPES[0]);
-  const [presupuestoCLP, setPresupuestoCLP] = useState("");
-  const [direccion, setDireccion] = useState("");
+  const [name, setName] = useState("");
+  const [manager, setManager] = useState("");
+  const [start, setStart] = useState(() => toLocalDateTimeInputValue(new Date()));
+  const [durationHours, setDurationHours] = useState(1);
+  const [type, setType] = useState(EVENT_TYPES[0]);
+  const [budgetClp, setBudgetClp] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
 
-  // Invitados por razón social (chips + números)
-  const [empresaInput, setEmpresaInput] = useState("");
-  const [empresas, setEmpresas] = useState([
-    // ejemplo
-    // { id: "1", nombre: "Entel", invitados: 5, confirmados: 2 }
-  ]);
+  // Empresas invitadas (chips con invited/confirmed)
+  const [companyName, setCompanyName] = useState("");
+  const [companyInvited, setCompanyInvited] = useState(1);
+  const [companyConfirmed, setCompanyConfirmed] = useState(0);
+  const [companies, setCompanies] = useState([]);
 
-  const totalInvitados = useMemo(
-    () => empresas.reduce((acc, e) => acc + (Number(e.invitados) || 0), 0),
-    [empresas]
-  );
-  const totalConfirmados = useMemo(
-    () => empresas.reduce((acc, e) => acc + (Number(e.confirmados) || 0), 0),
-    [empresas]
-  );
+  const totals = useMemo(() => {
+    const invited = companies.reduce((acc, c) => acc + (Number(c.invited) || 0), 0);
+    const confirmed = companies.reduce((acc, c) => acc + (Number(c.confirmed) || 0), 0);
+    return { invited, confirmed };
+  }, [companies]);
 
-  function addEmpresa() {
-    const nombre = empresaInput.trim();
-    if (!nombre) return;
+  function addCompany() {
+    const n = companyName.trim();
+    if (!n) return;
 
-    // Evitar duplicados por nombre
-    const exists = empresas.some(
-      (e) => e.nombre.toLowerCase() === nombre.toLowerCase()
-    );
-    if (exists) {
-      setEmpresaInput("");
-      return;
-    }
+    const invited = clampInt(companyInvited, 0, 9999);
+    const confirmed = clampInt(companyConfirmed, 0, invited);
 
-    setEmpresas((prev) => [
-      ...prev,
-      { id: crypto.randomUUID?.() || String(Date.now()), nombre, invitados: 0, confirmados: 0 },
-    ]);
-    setEmpresaInput("");
+    // si existe, actualiza
+    setCompanies((prev) => {
+      const idx = prev.findIndex((c) => c.name.toLowerCase() === n.toLowerCase());
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], invited, confirmed };
+        return copy;
+      }
+      return [...prev, { name: n, invited, confirmed }];
+    });
+
+    setCompanyName("");
+    setCompanyInvited(1);
+    setCompanyConfirmed(0);
   }
 
-  function removeEmpresa(id) {
-    setEmpresas((prev) => prev.filter((e) => e.id !== id));
+  function removeCompany(nameToRemove) {
+    setCompanies((prev) => prev.filter((c) => c.name !== nameToRemove));
   }
 
-  function updateEmpresa(id, patch) {
-    setEmpresas((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, ...patch } : e))
-    );
-  }
-
-  function handleEmpresaKeyDown(e) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      addEmpresa();
-    }
-  }
-
-  function handleSubmit(e) {
+  function submit(e) {
     e.preventDefault();
 
-    const payload = {
-      nombreEvento: nombreEvento.trim(),
-      gerenteOrganiza: gerenteOrganiza.trim(),
-      fechaHora,
-      duracionHoras: Number(duracionHoras) || 1,
-      tipoEvento,
-      presupuestoCLP: Number(String(presupuestoCLP).replace(/[^\d]/g, "")) || 0,
-      direccion: direccion.trim(),
-      invitadosPorEmpresa: empresas.map((e) => ({
-        razonSocial: e.nombre,
-        invitados: Number(e.invitados) || 0,
-        confirmados: Number(e.confirmados) || 0,
-      })),
-      createdAt: new Date().toISOString(),
-    };
-
-    if (!payload.nombreEvento || !payload.fechaHora) {
-      alert("Falta completar: Nombre del Evento y Fecha/Hora.");
+    const cleanName = name.trim();
+    const cleanManager = manager.trim();
+    if (!cleanName || !cleanManager) {
+      alert("Falta Nombre del Evento o Gerente que lo organiza.");
       return;
     }
 
-    onCreate?.(payload);
+    const startDateTime = new Date(start);
+    if (Number.isNaN(startDateTime.getTime())) {
+      alert("Fecha y hora inválida.");
+      return;
+    }
 
-    // Reset (mantengo tipo por comodidad)
-    setNombreEvento("");
-    setGerenteOrganiza("");
-    setFechaHora("");
-    setDuracionHoras(1);
-    setPresupuestoCLP("");
-    setDireccion("");
-    setEmpresaInput("");
-    setEmpresas([]);
+    const event = {
+      name: cleanName,
+      manager: cleanManager,
+      startDateTime: startDateTime.toISOString(),
+      durationHours: clampInt(durationHours, 1, 72),
+      type,
+      budgetClp: budgetClp === "" ? 0 : Number(String(budgetClp).replace(/[^\d]/g, "")),
+      address: address.trim(),
+      companies,
+      notes: notes.trim(),
+    };
+
+    onCreate?.(event);
+
+    // reset básico
+    setName("");
+    setManager("");
+    setDurationHours(1);
+    setType(EVENT_TYPES[0]);
+    setBudgetClp("");
+    setAddress("");
+    setNotes("");
+    setCompanies([]);
   }
 
   return (
-    <div style={styles.card}>
-      <h2 style={styles.h2}>Crear Evento</h2>
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div
+        style={{
+          background: "#FFFFFF",
+          border: "1px solid #E5E7EB",
+          borderRadius: 16,
+          padding: 16,
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 10 }}>Crear Evento</div>
 
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <div style={styles.grid2}>
-          <div>
-            <label style={styles.label}>Nombre del Evento</label>
+        <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Nombre del Evento">
             <input
-              style={styles.input}
-              value={nombreEvento}
-              onChange={(e) => setNombreEvento(e.target.value)}
-              placeholder="Ej: Workshop con cliente X"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Workshop con BCI"
+              style={inputStyle}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label style={styles.label}>Gerente que lo organiza</label>
+          <Field label="Gerente que lo organiza">
             <input
-              style={styles.input}
-              value={gerenteOrganiza}
-              onChange={(e) => setGerenteOrganiza(e.target.value)}
-              placeholder="Ej: Fernando Chilet"
+              value={manager}
+              onChange={(e) => setManager(e.target.value)}
+              placeholder="Ej: VS - Vinklaguer Sanchez"
+              style={inputStyle}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label style={styles.label}>Fecha y hora</label>
+          <Field label="Fecha y hora">
             <input
-              style={styles.input}
               type="datetime-local"
-              value={fechaHora}
-              onChange={(e) => setFechaHora(e.target.value)}
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              style={inputStyle}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label style={styles.label}>Duración (horas)</label>
+          <Field label="Duración (horas)">
             <input
-              style={styles.input}
               type="number"
               min={1}
-              step={1}
-              value={duracionHoras}
-              onChange={(e) => setDuracionHoras(e.target.value)}
+              max={72}
+              value={durationHours}
+              onChange={(e) => setDurationHours(e.target.value)}
+              style={inputStyle}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label style={styles.label}>Tipo de evento</label>
-            <select
-              style={styles.input}
-              value={tipoEvento}
-              onChange={(e) => setTipoEvento(e.target.value)}
-            >
+          <Field label="Tipo de evento">
+            <select value={type} onChange={(e) => setType(e.target.value)} style={inputStyle}>
               {EVENT_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
 
-          <div>
-            <label style={styles.label}>Presupuesto (CLP)</label>
+          <Field label="Presupuesto (CLP)">
             <input
-              style={styles.input}
-              value={formatCLP(presupuestoCLP)}
-              onChange={(e) => setPresupuestoCLP(e.target.value)}
-              placeholder="Ej: 1.200.000"
+              value={budgetClp}
+              onChange={(e) => setBudgetClp(e.target.value)}
+              placeholder="Ej: 350000"
               inputMode="numeric"
+              style={inputStyle}
             />
-          </div>
+          </Field>
 
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label style={styles.label}>Dirección del evento</label>
+          <Field label="Dirección del evento" span2>
             <input
-              style={styles.input}
-              value={direccion}
-              onChange={(e) => setDireccion(e.target.value)}
-              placeholder="Ej: Av. Apoquindo 1234, Las Condes"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Ej: Av. Providencia 1234, Santiago"
+              style={inputStyle}
             />
-          </div>
-        </div>
+          </Field>
 
-        <div style={{ marginTop: 16 }}>
-          <label style={styles.label}>
-            Razón social de los invitados (agrega varias)
-          </label>
+          <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Invitados por razón social</div>
 
-          <div style={styles.row}>
-            <input
-              style={{ ...styles.input, flex: 1 }}
-              value={empresaInput}
-              onChange={(e) => setEmpresaInput(e.target.value)}
-              onKeyDown={handleEmpresaKeyDown}
-              placeholder="Escribe una empresa y presiona Enter"
-            />
-            <button type="button" style={styles.btn} onClick={addEmpresa}>
-              + Agregar
-            </button>
-          </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.7fr 0.7fr auto", gap: 10, alignItems: "end" }}>
+              <Field label="Razón social">
+                <input
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Ej: Banco de Chile"
+                  style={inputStyle}
+                />
+              </Field>
 
-          {empresas.length > 0 && (
-            <div style={styles.empList}>
-              {empresas.map((e) => (
-                <div key={e.id} style={styles.empItem}>
-                  <div style={styles.chip}>
-                    <span style={{ fontWeight: 700 }}>{e.nombre}</span>
-                    <button
-                      type="button"
-                      style={styles.chipX}
-                      onClick={() => removeEmpresa(e.id)}
-                      title="Quitar"
-                    >
-                      ×
-                    </button>
-                  </div>
+              <Field label="Invitados">
+                <input
+                  type="number"
+                  min={0}
+                  max={9999}
+                  value={companyInvited}
+                  onChange={(e) => setCompanyInvited(e.target.value)}
+                  style={inputStyle}
+                />
+              </Field>
 
-                  <div style={styles.empNums}>
-                    <div style={styles.empField}>
-                      <span style={styles.smallLabel}>Invitados</span>
-                      <input
-                        style={styles.smallInput}
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={e.invitados}
-                        onChange={(ev) =>
-                          updateEmpresa(e.id, { invitados: ev.target.value })
-                        }
-                      />
-                    </div>
+              <Field label="Confirmados">
+                <input
+                  type="number"
+                  min={0}
+                  max={9999}
+                  value={companyConfirmed}
+                  onChange={(e) => setCompanyConfirmed(e.target.value)}
+                  style={inputStyle}
+                />
+              </Field>
 
-                    <div style={styles.empField}>
-                      <span style={styles.smallLabel}>Confirmados</span>
-                      <input
-                        style={styles.smallInput}
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={e.confirmados}
-                        onChange={(ev) =>
-                          updateEmpresa(e.id, { confirmados: ev.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
+              <button
+                type="button"
+                onClick={addCompany}
+                style={{
+                  height: 44,
+                  padding: "0 14px",
+                  borderRadius: 12,
+                  border: "1px solid #111827",
+                  background: "#111827",
+                  color: "#FFFFFF",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+              >
+                + Agregar
+              </button>
+            </div>
+
+            {/* chips */}
+            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {companies.map((c) => (
+                <div
+                  key={c.name}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                    borderRadius: 999,
+                    border: "1px solid #E5E7EB",
+                    background: "#F8FAFC",
+                    fontWeight: 900,
+                  }}
+                >
+                  <span>{c.name}</span>
+                  <span style={miniPill}>Inv: {c.invited}</span>
+                  <span style={miniPill}>Conf: {c.confirmed}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeCompany(c.name)}
+                    title="Eliminar"
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      fontWeight: 900,
+                      color: "#EF4444",
+                      fontSize: 16,
+                      lineHeight: 1,
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
-
-              <div style={styles.totals}>
-                <div>
-                  <b>Total invitados:</b> {totalInvitados}
-                </div>
-                <div>
-                  <b>Total confirmados:</b> {totalConfirmados}
-                </div>
-              </div>
             </div>
-          )}
-        </div>
 
-        <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end" }}>
-          <button type="submit" style={styles.primary}>
-            Guardar Evento
-          </button>
-        </div>
-      </form>
+            <div style={{ marginTop: 10, color: "#334155", fontWeight: 800 }}>
+              Totales: <b>{totals.invited}</b> invitados / <b>{totals.confirmed}</b> confirmados
+            </div>
+          </div>
+
+          <Field label="Comentario / notas" span2>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ej: objetivos, agenda, restricciones, etc."
+              style={{ ...inputStyle, minHeight: 110, resize: "vertical" }}
+            />
+          </Field>
+
+          <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
+            <button
+              type="submit"
+              style={{
+                padding: "12px 16px",
+                borderRadius: 12,
+                border: "1px solid #111827",
+                background: "#111827",
+                color: "#FFFFFF",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              Guardar Evento
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div style={{ marginTop: 12, color: "#64748B", fontWeight: 700 }}>
+        *Este formulario guarda eventos en memoria (sin base de datos). En el siguiente paso lo conectamos a persistencia.
+      </div>
     </div>
   );
 }
 
-const styles = {
-  card: {
-    border: "1px solid #e6e6e6",
-    borderRadius: 12,
-    padding: 16,
-    background: "#fff",
-  },
-  h2: { margin: 0, marginBottom: 12 },
-  form: { width: "100%" },
-  grid2: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 12,
-  },
-  label: { display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 },
-  input: {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 10,
-    border: "1px solid #dcdcdc",
-    outline: "none",
-  },
-  row: { display: "flex", gap: 10, alignItems: "center" },
-  btn: {
-    padding: "10px 12px",
-    borderRadius: 10,
-    border: "1px solid #dcdcdc",
-    background: "#f7f7f7",
-    cursor: "pointer",
-    fontWeight: 700,
-  },
-  primary: {
-    padding: "10px 14px",
-    borderRadius: 10,
-    border: "1px solid #111",
-    background: "#111",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 800,
-  },
-  empList: {
-    marginTop: 10,
-    border: "1px solid #eee",
-    borderRadius: 12,
-    padding: 12,
-    background: "#fafafa",
-  },
-  empItem: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    alignItems: "center",
-    padding: "10px 0",
-    borderBottom: "1px solid #eee",
-  },
-  chip: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "#fff",
-    border: "1px solid #e1e1e1",
-    minWidth: 260,
-  },
-  chipX: {
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    fontSize: 18,
-    lineHeight: 1,
-  },
-  empNums: { display: "flex", gap: 12, alignItems: "center" },
-  empField: { display: "flex", flexDirection: "column", gap: 4 },
-  smallLabel: { fontSize: 12, color: "#333", fontWeight: 700 },
-  smallInput: {
-    width: 120,
-    padding: "8px 10px",
-    borderRadius: 10,
-    border: "1px solid #dcdcdc",
-    outline: "none",
-  },
-  totals: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: 18,
-    paddingTop: 12,
-  },
+function Field({ label, children, span2 }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: span2 ? "1 / -1" : undefined }}>
+      <div style={{ fontSize: 13, fontWeight: 900, color: "#0F172A" }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+const inputStyle = {
+  height: 44,
+  borderRadius: 12,
+  border: "1px solid #E5E7EB",
+  padding: "0 12px",
+  fontSize: 14,
+  fontWeight: 700,
+  outline: "none",
+  background: "#FFFFFF",
+};
+
+const miniPill = {
+  fontSize: 12,
+  fontWeight: 900,
+  padding: "6px 10px",
+  borderRadius: 999,
+  border: "1px solid #E5E7EB",
+  background: "#FFFFFF",
+  color: "#0F172A",
 };
