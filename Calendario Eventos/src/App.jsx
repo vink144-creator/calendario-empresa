@@ -1,4 +1,6 @@
-
+import BrainForm from "./components/BrainForm";
+import WeatherForm from "./components/WeatherForm";
+import LinkedInForm from "./components/LinkedInForm";
 import { Box, Heading, Button } from "@chakra-ui/react";
 import { useState } from "react";
 import EventForm from "./components/EventForm";
