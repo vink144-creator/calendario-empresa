@@ -17,38 +17,25 @@ const MONTHS = [
   "diciembre",
 ];
 
-// Helpers
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function ymd(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
 function startOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
-function endOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
-}
-function addMonths(date, delta) {
-  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
-}
-function sameDay(a, b) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-function yyyyMmDd(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-function toLocalDayKeyFromISO(isoString) {
-  // Para agrupar por día local
-  const d = new Date(isoString);
-  return yyyyMmDd(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+
+function daysInMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 }
 
 export default function App() {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(ymd(new Date()));
 
   // Eventos guardados (por ahora en memoria)
   const [events, setEvents] = useState([]);
@@ -56,232 +43,192 @@ export default function App() {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
+  const firstDay = startOfMonth(currentDate);
+  const firstWeekday = firstDay.getDay(); // 0-6
+  const totalDays = daysInMonth(currentDate);
+
   const monthTitle = `${MONTHS[month]} ${year}`;
 
-  function nextMonth() {
-    setCurrentDate(addMonths(currentDate, 1));
-    setSelectedDay(null);
-  }
   function prevMonth() {
-    setCurrentDate(addMonths(currentDate, -1));
-    setSelectedDay(null);
+    setCurrentDate(new Date(year, month - 1, 1));
+  }
+  function nextMonth() {
+    setCurrentDate(new Date(year, month + 1, 1));
   }
   function goToday() {
     const now = new Date();
     setCurrentDate(new Date(now.getFullYear(), now.getMonth(), 1));
-    setSelectedDay(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    setSelectedDay(ymd(now));
   }
 
-  // Construcción de celdas del calendario (con días vacíos al inicio)
-  const calendarCells = useMemo(() => {
-    const first = startOfMonth(currentDate);
-    const last = endOfMonth(currentDate);
-
-    const firstDayOfWeek = first.getDay(); // 0=Dom..6=Sáb
-    const daysInMonth = last.getDate();
-
+  const gridCells = useMemo(() => {
     const cells = [];
-
-    // Vacíos antes del 1
-    for (let i = 0; i < firstDayOfWeek; i++) {
-      cells.push({ type: "empty", key: `e-${i}` });
+    // espacios antes
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    // días del mes
+    for (let d = 1; d <= totalDays; d++) {
+      cells.push(new Date(year, month, d));
     }
-
-    // Días del mes
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      cells.push({ type: "day", date, key: `d-${day}` });
-    }
-
+    // relleno para terminar semana completa
+    while (cells.length % 7 !== 0) cells.push(null);
     return cells;
-  }, [currentDate, year, month]);
+  }, [firstWeekday, totalDays, year, month]);
 
-  // Agrupar eventos por día (yyyy-mm-dd)
-  const eventsByDay = useMemo(() => {
-    const map = new Map();
-    for (const ev of events) {
-      const key = toLocalDayKeyFromISO(ev.fechaHoraISO);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(ev);
-    }
-    return map;
-  }, [events]);
+  const selectedEvents = useMemo(() => {
+    return events.filter((e) => e.dateKey === selectedDay);
+  }, [events, selectedDay]);
 
-  function handleSaveEvent(ev) {
-    setEvents((prev) => [ev, ...prev]);
+  function handleCreateEvent(payload) {
+    // dateKey = día (YYYY-MM-DD) para pintarlo en calendario
+    const dateKey = payload.fechaHora ? payload.fechaHora.slice(0, 10) : selectedDay;
 
-    // Seleccionar el día del evento automáticamente
-    const d = new Date(ev.fechaHoraISO);
-    const localDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    setCurrentDate(new Date(localDay.getFullYear(), localDay.getMonth(), 1));
-    setSelectedDay(localDay);
+    setEvents((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID?.() || String(Date.now()),
+        dateKey,
+        ...payload,
+      },
+    ]);
+
+    alert("Evento guardado ✅ (por ahora queda en memoria del navegador)");
   }
 
-  const selectedKey = selectedDay ? yyyyMmDd(selectedDay) : null;
-  const selectedEvents = selectedKey ? eventsByDay.get(selectedKey) || [] : [];
+  // Helpers para mini “marcadores” en el calendario
+  function markersForDay(dateKey) {
+    const items = events.filter((e) => e.dateKey === dateKey);
+    if (items.length === 0) return null;
+
+    // Por ahora: solo mostrará “barras” (después pondremos colores por tipo / estados)
+    return (
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+        {items.slice(0, 3).map((e) => (
+          <span
+            key={e.id}
+            title={e.nombreEvento}
+            style={{
+              display: "inline-block",
+              height: 6,
+              width: 22,
+              borderRadius: 99,
+              background: "#F4B400",
+            }}
+          />
+        ))}
+        {items.length > 3 && (
+          <span style={{ fontSize: 12, color: "#555" }}>+{items.length - 3}</span>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div style={page}>
-      {/* HEADER */}
-      <div style={header}>
-        <div style={titleWrap}>
-          <h1 style={title}>Calendario</h1>
-          <div style={monthText}>{monthTitle}</div>
+    <div style={styles.page}>
+      {/* Header simple (después metemos logo PNG y tabs) */}
+      <div style={styles.header}>
+        <div style={styles.brandLeft}>
+          <div style={styles.logoBox}>Logo</div>
+          <div style={{ fontWeight: 900 }}>Calendario Entel Connect</div>
         </div>
 
-        <div style={navButtons}>
-          <button style={btn} onClick={prevMonth} title="Mes anterior">
-            ◀
+        <div style={styles.monthNav}>
+          <button style={styles.navBtn} onClick={prevMonth} title="Mes anterior">
+            ←
           </button>
-          <button style={btnGhost} onClick={goToday}>
+          <div style={styles.monthTitle}>{monthTitle}</div>
+          <button style={styles.navBtn} onClick={nextMonth} title="Mes siguiente">
+            →
+          </button>
+          <button style={styles.todayBtn} onClick={goToday}>
             Hoy
           </button>
-          <button style={btn} onClick={nextMonth} title="Mes siguiente">
-            ▶
-          </button>
         </div>
       </div>
 
-      {/* FORM (por ahora visible arriba; luego lo movemos a pestaña 1) */}
-      <div style={panel}>
-        <EventForm onSave={handleSaveEvent} />
-      </div>
-
-      {/* CALENDARIO */}
-      <div style={calendarWrap}>
-        <div style={dowRow}>
-          {DAYS.map((d) => (
-            <div key={d} style={dowCell}>
-              {d}
-            </div>
-          ))}
-        </div>
-
-        <div style={grid}>
-          {calendarCells.map((c) => {
-            if (c.type === "empty") {
-              return <div key={c.key} style={cellEmpty} />;
-            }
-
-            const dayKey = yyyyMmDd(c.date);
-            const dayEvents = eventsByDay.get(dayKey) || [];
-            const isSelected = selectedDay && sameDay(c.date, selectedDay);
-
-            return (
-              <div
-                key={c.key}
-                style={{
-                  ...cell,
-                  ...(isSelected ? cellSelected : {}),
-                }}
-                onClick={() => setSelectedDay(c.date)}
-              >
-                <div style={cellTop}>
-                  <div style={dayNumber}>{c.date.getDate()}</div>
-                </div>
-
-                {/* Mini lista de eventos en la celda */}
-                <div style={cellEvents}>
-                  {dayEvents.slice(0, 2).map((ev) => (
-                    <div key={ev.id} style={eventPill} title={ev.nombreEvento}>
-                      {ev.nombreEvento}
-                    </div>
-                  ))}
-                  {dayEvents.length > 2 && (
-                    <div style={moreText}>+{dayEvents.length - 2} más</div>
-                  )}
-                </div>
+      <div style={styles.mainGrid}>
+        {/* Calendario */}
+        <div style={styles.calendarCard}>
+          <div style={styles.weekHeader}>
+            {DAYS.map((d) => (
+              <div key={d} style={styles.weekDay}>
+                {d}
               </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* PANEL INFERIOR: Detalle del día seleccionado */}
-      <div style={bottomPanel}>
-        <div style={bottomHeader}>
-          <div style={bottomTitle}>
-            {selectedDay
-              ? `Día ${selectedDay.getDate()} (${MONTHS[selectedDay.getMonth()]} ${selectedDay.getFullYear()})`
-              : "Selecciona un día"}
+            ))}
           </div>
-          <div style={bottomHint}>
-            Aquí veremos comentarios, colores y detalle (lo siguiente que haremos).
-          </div>
-        </div>
 
-        {!selectedDay && (
-          <div style={emptyState}>
-            Haz click en una fecha para ver su detalle.
-          </div>
-        )}
+          <div style={styles.monthGrid}>
+            {gridCells.map((dateObj, idx) => {
+              if (!dateObj) return <div key={idx} style={styles.dayCellEmpty} />;
 
-        {selectedDay && selectedEvents.length === 0 && (
-          <div style={emptyState}>
-            No hay eventos guardados para este día.
-          </div>
-        )}
-
-        {selectedDay && selectedEvents.length > 0 && (
-          <div style={detailList}>
-            {selectedEvents.map((ev) => {
-              const d = new Date(ev.fechaHoraISO);
-              const hh = String(d.getHours()).padStart(2, "0");
-              const mm = String(d.getMinutes()).padStart(2, "0");
+              const key = ymd(dateObj);
+              const isSelected = key === selectedDay;
 
               return (
-                <div key={ev.id} style={detailCard}>
-                  <div style={detailRowTop}>
-                    <div style={detailName}>{ev.nombreEvento}</div>
-                    <div style={detailType}>{ev.tipoEvento}</div>
-                  </div>
-
-                  <div style={detailRow}>
-                    <div style={detailLabel}>Organiza:</div>
-                    <div style={detailValue}>{ev.gerenteLabel}</div>
-                  </div>
-
-                  <div style={detailRow}>
-                    <div style={detailLabel}>Hora:</div>
-                    <div style={detailValue}>
-                      {hh}:{mm} ({ev.duracionHoras}h)
-                    </div>
-                  </div>
-
-                  <div style={detailRow}>
-                    <div style={detailLabel}>Dirección:</div>
-                    <div style={detailValue}>{ev.direccion || "—"}</div>
-                  </div>
-
-                  <div style={detailRow}>
-                    <div style={detailLabel}>Presupuesto:</div>
-                    <div style={detailValue}>
-                      {ev.presupuestoCLP
-                        ? `$ ${Number(ev.presupuestoCLP).toLocaleString("es-CL")}`
-                        : "—"}
-                    </div>
-                  </div>
-
-                  {ev.invitadosPorRazonSocial?.length > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                        Invitados por razón social
-                      </div>
-                      <div style={rsGrid}>
-                        {ev.invitadosPorRazonSocial.map((r) => (
-                          <div key={r.id} style={rsCard}>
-                            <div style={{ fontWeight: 800 }}>{r.razonSocial}</div>
-                            <div style={{ fontSize: 12, opacity: 0.75 }}>
-                              Invitados: {r.invitados} · Confirmados: {r.confirmados}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <button
+                  key={key}
+                  onClick={() => setSelectedDay(key)}
+                  style={{
+                    ...styles.dayCell,
+                    ...(isSelected ? styles.dayCellSelected : {}),
+                  }}
+                >
+                  <div style={styles.dayNumber}>{dateObj.getDate()}</div>
+                  {markersForDay(key)}
+                </button>
               );
             })}
+          </div>
+        </div>
+
+        {/* Panel derecho: Formulario */}
+        <div style={styles.side}>
+          <EventForm onCreate={handleCreateEvent} />
+        </div>
+      </div>
+
+      {/* Panel inferior: detalle del día seleccionado */}
+      <div style={styles.detailCard}>
+        <div style={styles.detailHeader}>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>
+            Detalle del día: {selectedDay}
+          </div>
+          <div style={{ color: "#666" }}>
+            Aquí después vamos a mostrar comentarios, colores y bloqueos.
+          </div>
+        </div>
+
+        {selectedEvents.length === 0 ? (
+          <div style={{ padding: 14, color: "#555" }}>
+            No hay eventos guardados para este día.
+          </div>
+        ) : (
+          <div style={{ padding: 14, display: "grid", gap: 10 }}>
+            {selectedEvents.map((e) => (
+              <div key={e.id} style={styles.eventRow}>
+                <div style={{ fontWeight: 900 }}>{e.nombreEvento}</div>
+                <div style={{ color: "#555" }}>
+                  <b>Tipo:</b> {e.tipoEvento} &nbsp;|&nbsp; <b>Hora:</b>{" "}
+                  {e.fechaHora ? e.fechaHora.replace("T", " ") : "-"} &nbsp;|&nbsp;{" "}
+                  <b>Duración:</b> {e.duracionHoras}h
+                </div>
+                {e.direccion && (
+                  <div style={{ color: "#555" }}>
+                    <b>Dirección:</b> {e.direccion}
+                  </div>
+                )}
+                {Array.isArray(e.invitadosPorEmpresa) && e.invitadosPorEmpresa.length > 0 && (
+                  <div style={{ color: "#555" }}>
+                    <b>Empresas:</b>{" "}
+                    {e.invitadosPorEmpresa
+                      .map(
+                        (x) =>
+                          `${x.razonSocial} (Inv: ${x.invitados}, Conf: ${x.confirmados})`
+                      )
+                      .join(" · ")}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -289,216 +236,131 @@ export default function App() {
   );
 }
 
-/* ====== ESTILOS ====== */
-const page = {
-  minHeight: "100vh",
-  background: "#f4f6f9",
-  padding: 18,
-  boxSizing: "border-box",
-  fontFamily: "Arial, sans-serif",
-};
-
-const header = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-  background: "#fff",
-  border: "1px solid #e6e9f0",
-  borderRadius: 16,
-  padding: "14px 16px",
-};
-
-const titleWrap = { display: "flex", flexDirection: "column", gap: 6 };
-
-const title = { margin: 0, fontSize: 20 };
-
-const monthText = {
-  fontSize: 14,
-  opacity: 0.75,
-  textTransform: "capitalize",
-};
-
-const navButtons = { display: "flex", gap: 8, alignItems: "center" };
-
-const btn = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #0f172a",
-  background: "#0f172a",
-  color: "white",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const btnGhost = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #d9dde6",
-  background: "white",
-  color: "#0f172a",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const panel = {
-  marginTop: 14,
-  background: "#fff",
-  border: "1px solid #e6e9f0",
-  borderRadius: 16,
-  padding: 10,
-};
-
-const calendarWrap = {
-  marginTop: 14,
-  background: "#fff",
-  border: "1px solid #e6e9f0",
-  borderRadius: 16,
-  padding: 12,
-};
-
-const dowRow = {
-  display: "grid",
-  gridTemplateColumns: "repeat(7, 1fr)",
-  gap: 10,
-  marginBottom: 10,
-};
-
-const dowCell = {
-  fontSize: 12,
-  fontWeight: 800,
-  opacity: 0.7,
-  padding: "6px 8px",
-};
-
-const grid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(7, 1fr)",
-  gap: 10,
-};
-
-const cellEmpty = {
-  minHeight: 120,
-  borderRadius: 12,
-  background: "transparent",
-};
-
-const cell = {
-  minHeight: 120,
-  borderRadius: 12,
-  border: "1px solid #e6e9f0",
-  background: "#fff",
-  padding: 10,
-  cursor: "pointer",
-  boxSizing: "border-box",
-  display: "flex",
-  flexDirection: "column",
-};
-
-const cellSelected = {
-  outline: "2px solid #1d4ed8",
-  background: "#eef4ff",
-};
-
-const cellTop = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  marginBottom: 8,
-};
-
-const dayNumber = { fontWeight: 900 };
-
-const cellEvents = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  overflow: "hidden",
-};
-
-const eventPill = {
-  fontSize: 12,
-  padding: "6px 8px",
-  borderRadius: 10,
-  background: "#fef3c7",
-  border: "1px solid #fde68a",
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
-
-const moreText = { fontSize: 12, opacity: 0.7 };
-
-const bottomPanel = {
-  marginTop: 14,
-  background: "#fff",
-  border: "1px solid #e6e9f0",
-  borderRadius: 16,
-  padding: 14,
-};
-
-const bottomHeader = { marginBottom: 10 };
-
-const bottomTitle = { fontSize: 16, fontWeight: 900, textTransform: "capitalize" };
-
-const bottomHint = { fontSize: 12, opacity: 0.7, marginTop: 6 };
-
-const emptyState = {
-  padding: 14,
-  borderRadius: 12,
-  background: "#f8fafc",
-  border: "1px solid #e6e9f0",
-  opacity: 0.85,
-};
-
-const detailList = { display: "grid", gap: 12 };
-
-const detailCard = {
-  borderRadius: 14,
-  border: "1px solid #e6e9f0",
-  padding: 12,
-  background: "#fff",
-};
-
-const detailRowTop = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-  marginBottom: 10,
-};
-
-const detailName = { fontSize: 15, fontWeight: 900 };
-
-const detailType = {
-  fontSize: 12,
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "#eef2ff",
-  border: "1px solid #c7d2fe",
-  whiteSpace: "nowrap",
-};
-
-const detailRow = {
-  display: "grid",
-  gridTemplateColumns: "120px 1fr",
-  gap: 10,
-  padding: "4px 0",
-};
-
-const detailLabel = { fontSize: 12, opacity: 0.75, fontWeight: 800 };
-
-const detailValue = { fontSize: 13 };
-
-const rsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 10,
-};
-
-const rsCard = {
-  borderRadius: 12,
-  border: "1px solid #eef2f7",
-  background: "#f8fafc",
-  padding: 10,
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: "#f5f6f8",
+    padding: 18,
+    fontFamily: "Arial, sans-serif",
+    boxSizing: "border-box",
+  },
+  header: {
+    background: "#fff",
+    border: "1px solid #e6e6e6",
+    borderRadius: 14,
+    padding: "14px 16px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  brandLeft: { display: "flex", alignItems: "center", gap: 12 },
+  logoBox: {
+    width: 52,
+    height: 34,
+    borderRadius: 10,
+    border: "1px dashed #cfcfcf",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#777",
+    fontWeight: 800,
+    fontSize: 12,
+  },
+  monthNav: { display: "flex", alignItems: "center", gap: 10 },
+  monthTitle: { fontSize: 18, fontWeight: 900, textTransform: "capitalize" },
+  navBtn: {
+    height: 36,
+    width: 44,
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 900,
+  },
+  todayBtn: {
+    height: 36,
+    padding: "0 12px",
+    borderRadius: 10,
+    border: "1px solid #111",
+    background: "#111",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 900,
+  },
+  mainGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.6fr 1fr",
+    gap: 14,
+    marginTop: 14,
+    alignItems: "start",
+  },
+  calendarCard: {
+    background: "#fff",
+    border: "1px solid #e6e6e6",
+    borderRadius: 14,
+    padding: 14,
+  },
+  weekHeader: {
+    display: "grid",
+    gridTemplateColumns: "repeat(7, 1fr)",
+    gap: 10,
+    marginBottom: 10,
+  },
+  weekDay: {
+    textAlign: "center",
+    fontWeight: 900,
+    color: "#333",
+    padding: "8px 0",
+    borderRadius: 10,
+    background: "#f3f4f6",
+  },
+  monthGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(7, 1fr)",
+    gap: 10,
+  },
+  dayCellEmpty: {
+    height: 110,
+    borderRadius: 12,
+    background: "transparent",
+  },
+  dayCell: {
+    height: 110,
+    borderRadius: 12,
+    border: "1px solid #e8e8e8",
+    background: "#fff",
+    cursor: "pointer",
+    padding: 10,
+    textAlign: "left",
+    boxShadow: "0 1px 0 rgba(0,0,0,0.02)",
+  },
+  dayCellSelected: {
+    border: "2px solid #4c8bf5",
+    background: "#eef5ff",
+  },
+  dayNumber: { fontWeight: 900, fontSize: 14, color: "#111" },
+  side: { display: "grid", gap: 14 },
+  detailCard: {
+    marginTop: 14,
+    background: "#fff",
+    border: "1px solid #e6e6e6",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  detailHeader: {
+    padding: 14,
+    borderBottom: "1px solid #eee",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  eventRow: {
+    border: "1px solid #eee",
+    borderRadius: 12,
+    padding: 12,
+    background: "#fafafa",
+    display: "grid",
+    gap: 6,
+  },
 };
