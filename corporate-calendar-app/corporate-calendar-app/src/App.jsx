@@ -1,157 +1,107 @@
-import { useMemo, useState } from 'react'
-import { Box, Button, Container, Divider, HStack, Stack, Text } from '@chakra-ui/react'
-import CountryToggle from './components/CountryToggle.jsx'
-import EventLegend from './components/EventLegend.jsx'
-import EventList from './components/EventList.jsx'
-import EventDetail from './components/EventDetail.jsx'
-import EventForm from './components/EventForm.jsx'
-import ImportDocx from './components/ImportDocx.jsx'
-import { exportBackup, importBackupFile } from './utils/storage.js'
-import { useAppState } from './hooks/useAppState.js'
-
-function normalizeExternal(country, arr) {
-  return (arr || []).map(e => ({
-    id: e.id,
-    country,
-    city: e.city,
-    title: e.title,
-    start: e.start,
-    end: e.end,
-    type: 'Externo',
-    isExternal: true,
-    notes: e.source ? `Fuente: ${e.source}` : ''
-  }))
-}
+import { useState } from "react";
 
 export default function App() {
-  const { state, actions } = useAppState()
-  const country = state.selectedCountry
 
-  const [selectedId, setSelectedId] = useState('')
-  const [mode, setMode] = useState('list') // list | new | edit | import
-  const [draftEdit, setDraftEdit] = useState(null)
+const [month,setMonth] = useState(new Date());
 
-  const events = useMemo(() => state.events.filter(e => e.country === country), [state.events, country])
+const days = new Date(
+month.getFullYear(),
+month.getMonth()+1,
+0
+).getDate();
 
-  const external = useMemo(() => normalizeExternal(country, state.externalEvents?.[country] || []), [state.externalEvents, country])
+function nextMonth(){
+setMonth(new Date(month.getFullYear(),month.getMonth()+1,1));
+}
 
-  const allForList = useMemo(() => {
-    // Mostramos externos (solo en CL por defecto) junto con los internos, pero no se pueden eliminar desde la lista externa
-    return [...events, ...external].sort((a,b)=> new Date(b.start) - new Date(a.start))
-  }, [events, external])
+function prevMonth(){
+setMonth(new Date(month.getFullYear(),month.getMonth()-1,1));
+}
 
-  const selected = useMemo(() => events.find(e => e.id === selectedId) || null, [events, selectedId])
+function goToday(){
+setMonth(new Date());
+}
 
-  function startNew() {
-    setDraftEdit(null)
-    setMode('new')
-  }
+const [selectedDay,setSelectedDay] = useState(null);
 
-  function startEdit() {
-    if (!selected) return
-    setDraftEdit(selected)
-    setMode('edit')
-  }
+return (
 
-  function onSave(ev) {
-    actions.upsertEvent(ev)
-    setSelectedId(ev.id)
-    setMode('list')
-  }
+<div style={{padding:"20px",fontFamily:"Arial"}}>
 
-  function onDelete(id) {
-    actions.deleteEvent(id)
-    if (selectedId === id) setSelectedId('')
-    setMode('list')
-  }
+<h1 style={{textAlign:"center"}}>
+Calendario Corporativo
+</h1>
 
-  async function onImportBackup(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const data = await importBackupFile(file)
-    actions.setAll(data)
-    setSelectedId('')
-    setMode('list')
-  }
+<div style={{
+display:"flex",
+justifyContent:"center",
+gap:"10px",
+marginBottom:"20px"
+}}>
 
-  return (
-    <Container maxW="1200px" py={6}>
-      <Stack spacing={4}>
-        <HStack justify="space-between" wrap="wrap">
-          <Stack spacing={0}>
-            <Text fontSize="2xl" fontWeight="bold">Calendario corporativo</Text>
-            <Text color="gray.600" fontSize="sm">Sin base de datos (todo local). Importa Word (.docx), crea eventos y evita choques con eventos externos de Santiago.</Text>
-          </Stack>
+<button onClick={prevMonth}>◀</button>
 
-          <CountryToggle value={country} onChange={(c) => { actions.setCountry(c); setSelectedId(''); setMode('list') }} />
-        </HStack>
+<h2>
+{month.toLocaleString('es',{month:'long'})}
+{" "}
+{month.getFullYear()}
+</h2>
 
-        <Box borderWidth="1px" borderRadius="lg" p={4} bg="white">
-          <EventLegend />
-          <Divider my={4} />
-          <HStack wrap="wrap" spacing={2}>
-            <Button colorScheme="blue" onClick={startNew}>Nuevo evento</Button>
-            <Button variant="outline" onClick={() => setMode('import')}>Importar Word</Button>
-            <Button variant="outline" onClick={() => exportBackup(state)}>Exportar respaldo</Button>
+<button onClick={nextMonth}>▶</button>
 
-            <Button as="label" variant="outline" cursor="pointer">
-              Importar respaldo
-              <input type="file" accept="application/json" hidden onChange={onImportBackup} />
-            </Button>
-          </HStack>
-        </Box>
+<button onClick={goToday}>
+Hoy
+</button>
 
-        <HStack align="start" spacing={4} flexWrap="wrap">
-          <Box flex="1" minW="340px">
-            <EventList
-              title={country === 'CL' ? 'Chile (Santiago)' : 'Perú (Lima)'}
-              events={allForList}
-              selectedId={selectedId}
-              onSelect={(ev) => {
-                if (ev.isExternal) return // externos: solo visibles
-                setSelectedId(ev.id)
-                setMode('list')
-              }}
-              onDelete={(id) => onDelete(id)}
-            />
-          </Box>
+</div>
 
-          <Box flex="1" minW="340px">
-            {mode === 'new' ? (
-              <EventForm
-                country={country}
-                externalEvents={state.externalEvents?.[country] || []}
-                onCancel={() => setMode('list')}
-                onSave={onSave}
-              />
-            ) : null}
+<div style={{
+display:"grid",
+gridTemplateColumns:"repeat(7,1fr)",
+gap:"10px"
+}}>
 
-            {mode === 'edit' ? (
-              <EventForm
-                country={country}
-                externalEvents={state.externalEvents?.[country] || []}
-                initialValue={draftEdit}
-                onCancel={() => setMode('list')}
-                onSave={onSave}
-              />
-            ) : null}
+{Array.from({length:days},(_,i)=>{
 
-            {mode === 'import' ? (
-              <ImportDocx
-                country={country}
-                onImported={(imported) => {
-                  imported.forEach(ev => actions.upsertEvent(ev))
-                  setMode('list')
-                }}
-              />
-            ) : null}
+const day=i+1;
 
-            {mode === 'list' ? (
-              <EventDetail event={selected} onEdit={startEdit} />
-            ) : null}
-          </Box>
-        </HStack>
-      </Stack>
-    </Container>
-  )
+return(
+
+<div
+key={day}
+onClick={()=>setSelectedDay(day)}
+style={{
+border:"1px solid #ccc",
+minHeight:"90px",
+padding:"5px",
+cursor:"pointer"
+}}
+>
+
+<strong>{day}</strong>
+
+</div>
+
+)
+
+})}
+
+</div>
+
+<div style={{marginTop:"40px"}}>
+
+<h3>
+Detalles del día {selectedDay ?? "-"}
+</h3>
+
+<p>
+Aquí aparecerán eventos, comentarios y colores.
+</p>
+
+</div>
+
+</div>
+
+);
+
 }
