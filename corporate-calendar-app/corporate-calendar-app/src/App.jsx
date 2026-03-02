@@ -2,68 +2,68 @@ import { useState } from "react";
 
 export default function App() {
 
-const [month,setMonth] = useState(new Date());
+const [currentDate,setCurrentDate] = useState(new Date());
+const [selectedDay,setSelectedDay] = useState(null);
 
-const days = new Date(
-month.getFullYear(),
-month.getMonth()+1,
-0
-).getDate();
+const year = currentDate.getFullYear();
+const month = currentDate.getMonth();
+
+const daysInMonth = new Date(year, month + 1, 0).getDate();
 
 function nextMonth(){
-setMonth(new Date(month.getFullYear(),month.getMonth()+1,1));
+setCurrentDate(new Date(year, month + 1, 1));
 }
 
 function prevMonth(){
-setMonth(new Date(month.getFullYear(),month.getMonth()-1,1));
+setCurrentDate(new Date(year, month - 1, 1));
 }
 
 function goToday(){
-setMonth(new Date());
+setCurrentDate(new Date());
 }
-
-const [selectedDay,setSelectedDay] = useState(null);
 
 return (
 
-<div style={{padding:"20px",fontFamily:"Arial"}}>
+<div style={{padding:"30px",fontFamily:"Arial"}}>
 
-<h1 style={{textAlign:"center"}}>
-Calendario Corporativo
-</h1>
+{/* HEADER */}
 
 <div style={{
 display:"flex",
-justifyContent:"center",
-gap:"10px",
+justifyContent:"space-between",
+alignItems:"center",
 marginBottom:"20px"
 }}>
 
+<h1>
+{currentDate.toLocaleString("es", { month: "long" })}
+{" "}
+{year}
+</h1>
+
+<div style={{display:"flex",gap:"10px"}}>
+
 <button onClick={prevMonth}>◀</button>
 
-<h2>
-{month.toLocaleString('es',{month:'long'})}
-{" "}
-{month.getFullYear()}
-</h2>
+<button onClick={goToday}>Hoy</button>
 
 <button onClick={nextMonth}>▶</button>
 
-<button onClick={goToday}>
-Hoy
-</button>
+</div>
 
 </div>
+
+{/* CALENDARIO */}
 
 <div style={{
 display:"grid",
 gridTemplateColumns:"repeat(7,1fr)",
-gap:"10px"
+gap:"12px"
 }}>
 
-{Array.from({length:days},(_,i)=>{
+{Array.from({length:daysInMonth},(_,i)=>{
 
-const day=i+1;
+const day = i+1;
 
 return(
 
@@ -71,10 +71,12 @@ return(
 key={day}
 onClick={()=>setSelectedDay(day)}
 style={{
-border:"1px solid #ccc",
+border:"1px solid #ddd",
+borderRadius:"8px",
 minHeight:"90px",
-padding:"5px",
-cursor:"pointer"
+padding:"8px",
+cursor:"pointer",
+background:selectedDay===day ? "#dbeafe":"white"
 }}
 >
 
@@ -88,14 +90,19 @@ cursor:"pointer"
 
 </div>
 
-<div style={{marginTop:"40px"}}>
+{/* PANEL INFERIOR */}
 
-<h3>
-Detalles del día {selectedDay ?? "-"}
-</h3>
+<div style={{
+marginTop:"40px",
+padding:"20px",
+background:"#f5f5f5",
+borderRadius:"10px"
+}}>
+
+<h2>Día {selectedDay ?? "-"}</h2>
 
 <p>
-Aquí aparecerán eventos, comentarios y colores.
+Aquí aparecerán los eventos, reuniones o workshops.
 </p>
 
 </div>
